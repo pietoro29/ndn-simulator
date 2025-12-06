@@ -1,0 +1,55 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ndn-scripts
+data:
+  nfd.conf: |
+    {{ nfd_conf | indent(4) }}
+
+  entrypoint.sh: |
+    #!/bin/bash
+    set -e
+
+    NODE_NAME=$1
+    echo "=== Initializing Node: ${NODE_NAME} ==="
+    mkdir -p /usr/local/etc/ndn
+    cp /scripts/nfd.conf /usr/local/etc/ndn/nfd.conf
+    mkdir -p /etc/nlsr
+    cp /bootstrap/nlsr/nlsr.conf /etc/nlsr/nlsr.conf
+
+    mkdir -p /run/nfd
+    export HOME=/root
+
+    # 自己署名証明書の作成 (Router用)
+    # ※ NLSR設定内の router prefix と一致させる必要がある
+    NETWORK_PREFIX="{{ config.network_prefix }}"
+    SITE_NAME="{{ config.site_name }}"
+    FULL_PREFIX="${NETWORK_PREFIX}/${SITE_NAME}"
+    ROUTER_PREFIX="${FULL_PREFIX}/%C1.Router/${NODE_NAME}"
+
+    echo "Generating Keys for: ${ROUTER_PREFIX}"
+    ndnsec key-gen "${ROUTER_PREFIX}" | ndnsec cert-install -
+    ndnsec set-default "${ROUTER_PREFIX}"
+    ndnsec cert-dump -i "${ROUTER_PREFIX}" > /etc/nlsr/router.cert
+
+    echo "--- Starting NFD ---"
+    nfd-start > /var/log/nfd.log 2>&1 &
+    NFD_PID=$!
+    sleep 5
+
+    echo "--- Creating Faces ---"
+    IFS=',' read -ra ADDR <<< "$NEIGHBORS"
+    for neighbor_pair in "${ADDR[@]}"; do
+        neighbor_host="${neighbor_pair%%:*}"
+        if [ ! -z "$neighbor_host" ]; then
+            echo "Creating face to ${neighbor_host}..."
+            nfdc face create tcp://${neighbor_host} || true
+        fi
+    done
+
+    echo "--- Starting NLSR ---"
+    nlsr -f /etc/nlsr/nlsr.conf &
+    NLSR_PID=$!
+
+    tail -f /var/log/nfd.log &
+    wait $NFD_PID $NLSR_PID

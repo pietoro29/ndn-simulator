@@ -1,0 +1,60 @@
+general
+{
+  network {{ network_prefix }}
+  site {{ site_name }}
+  router /%C1.Router/{{ node_name }}
+  log-level INFO
+  lsa-refresh-time 1800
+  lsa-interest-lifetime 4
+  sync-protocol psync
+  sync-interest-lifetime 60000
+  state-dir /var/lib/nlsr/
+}
+
+neighbors
+{
+  hello-retries 3
+  hello-timeout 1
+  hello-interval 60
+  adj-lsa-build-interval 10
+  face-dataset-fetch-tries 3
+  face-dataset-fetch-interval 3600
+{% for neighbor in neighbors %}
+  neighbor
+  {
+    name {{ network_prefix }}/{{ site_name }}/%C1.Router/{{ neighbor.name }}
+    face-uri tcp://{{ neighbor.name }}
+    link-cost {{ neighbor.cost }}
+  }
+{% endfor %}
+}
+
+hyperbolic
+{
+  state off
+  radius   123.456
+  angle    1.45,2.36
+}
+
+advertising
+{
+  prefix {{ network_prefix }}/{{ site_name }}/{{ node_name }}
+}
+
+security
+{
+  validator
+  {
+    trust-anchor
+    {
+      type any
+    }
+  }
+  prefix-update-validator
+  {
+    trust-anchor
+    {
+      type any
+    }
+  }
+}

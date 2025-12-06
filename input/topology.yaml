@@ -1,0 +1,24 @@
+network_prefix: "/ndn/jp/waseda"
+site_name: "sim-site"
+
+nodes:
+  - name: "node-a"
+    neighbors:
+      - name: "node-b"
+        cost: 10
+      - name: "node-c"
+        cost: 25
+
+  - name: "node-b"
+    neighbors:
+      - name: "node-a"
+        cost: 10
+      - name: "node-c"
+        cost: 15
+
+  - name: "node-c"
+    neighbors:
+      - name: "node-a"
+        cost: 25
+      - name: "node-b"
+        cost: 15
