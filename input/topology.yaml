@@ -25,4 +25,4 @@ nodes:
         cost: 15
 
 security:
-    mode: "lax"  # "strict" or "lax"
+    mode: "strict"  # "strict" or "lax"

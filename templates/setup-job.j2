@@ -26,9 +26,9 @@ spec:
           mkdir -p /work/keys
           export HOME=/root
 
-          ROOT_PREFIX="/ndn"
-          SITE_PREFIX="{{ network_prefix }}"
-          OP_PREFIX="{{ network_prefix }}/%C1.Operator/op"
+          ROOT_PREFIX="{{ network_prefix }}"
+          SITE_PREFIX="{{ network_prefix }}/{{ site_name }}"
+          OP_PREFIX="{{ network_prefix }}/{{ site_name }}/%C1.Operator/op"
 
           echo "--- 1. Root CA Generation ---"
           ndnsec key-gen $ROOT_PREFIX > root.key

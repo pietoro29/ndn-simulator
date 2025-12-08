@@ -31,6 +31,7 @@ data:
         NETWORK_PREFIX="{{ config.network_prefix }}"
         SITE_NAME="{{ config.site_name }}"
         ROUTER_PREFIX="${NETWORK_PREFIX}/${SITE_NAME}/%C1.Router/${NODE_NAME}"
+
         ndnsec set-default "$ROUTER_PREFIX"
         ndnsec cert-dump -i "$ROUTER_PREFIX" > /etc/nlsr/router.cert
 
@@ -50,6 +51,15 @@ data:
     NFD_PID=$!
     sleep 5
 
+    echo "Waiting for NFD socket..."
+    for i in {1..30}; do
+        if [ -S /run/nfd/nfd.sock ]; then
+            echo "NFD is ready."
+            break
+        fi
+        sleep 2
+    done
+
     echo "--- Creating Faces ---"
     IFS=',' read -ra ADDR <<< "$NEIGHBORS"
     for neighbor_pair in "${ADDR[@]}"; do
@@ -66,6 +76,8 @@ data:
             done
         fi
     done
+
+    sleep 2
 
     echo "--- Starting NLSR ---"
     nlsr -f /etc/nlsr/nlsr.conf &

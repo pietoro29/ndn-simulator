@@ -1,5 +1,137 @@
 
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ndn-setup-sa
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ndn-setup-role
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["create", "delete", "get", "list", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ndn-setup-rb
+subjects:
+- kind: ServiceAccount
+  name: ndn-setup-sa
+roleRef:
+  kind: Role
+  name: ndn-setup-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ndn-setup-job
+spec:
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      serviceAccountName: ndn-setup-sa
+      containers:
+      - name: key-generator
+        image: icekarinn/ndn-all:v1.0
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -e
+          echo "=== Starting NDN Certificate Chain Generation ==="
+
+          #kubectlのインストール
+          apt-get update && apt-get install -y curl
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          mv kubectl /usr/local/bin/
+
+          mkdir -p /work/keys
+          export HOME=/root
+
+          ROOT_PREFIX="/ndn/jp/waseda"
+          SITE_PREFIX="/ndn/jp/waseda/sim-site"
+          OP_PREFIX="/ndn/jp/waseda/sim-site/%C1.Operator/op"
+
+          echo "--- 1. Root CA Generation ---"
+          ndnsec key-gen $ROOT_PREFIX > root.key
+          ndnsec cert-dump -i $ROOT_PREFIX > /work/keys/root.cert
+          ndnsec cert-install -f /work/keys/root.cert
+
+          echo "--- 2. Site CA Generation (Root signed) ---"
+          ndnsec key-gen $SITE_PREFIX > site.key
+          ndnsec cert-gen -s $ROOT_PREFIX site.key > /work/keys/site.cert
+          ndnsec cert-install -f /work/keys/site.cert
+
+          echo "--- 3. Operator CA Generation (Site signed) ---"
+          ndnsec key-gen $OP_PREFIX > op.key
+          ndnsec cert-gen -s $SITE_PREFIX op.key > /work/keys/op.cert
+          ndnsec cert-install -f /work/keys/op.cert
+
+          kubectl delete secret ndn-trust-anchor --ignore-not-found
+          kubectl create secret generic ndn-trust-anchor \
+            --from-file=/work/keys/root.cert \
+            --from-file=/work/keys/site.cert \
+            --from-file=/work/keys/op.cert
+
+          echo "--- 4. Router Keys Generation (Op signed) ---"
+          
+          NODE_NAME="node-a"
+          ROUTER_PREFIX="/ndn/jp/waseda/sim-site/%C1.Router/$NODE_NAME"
+
+          echo "Processing $NODE_NAME ..."
+          ndnsec key-gen $ROUTER_PREFIX > $NODE_NAME.key
+          ndnsec cert-gen -s $OP_PREFIX $NODE_NAME.key > /work/keys/$NODE_NAME.cert
+          ndnsec cert-install -f /work/keys/$NODE_NAME.cert
+
+          ndnsec export -o /work/keys/$NODE_NAME.p12 -i $ROUTER_PREFIX -P password
+
+          SECRET_NAME="sec-$NODE_NAME"
+          kubectl delete secret $SECRET_NAME --ignore-not-found
+          kubectl create secret generic $SECRET_NAME \
+            --from-file=identity.p12=/work/keys/$NODE_NAME.p12
+
+          
+          NODE_NAME="node-b"
+          ROUTER_PREFIX="/ndn/jp/waseda/sim-site/%C1.Router/$NODE_NAME"
+
+          echo "Processing $NODE_NAME ..."
+          ndnsec key-gen $ROUTER_PREFIX > $NODE_NAME.key
+          ndnsec cert-gen -s $OP_PREFIX $NODE_NAME.key > /work/keys/$NODE_NAME.cert
+          ndnsec cert-install -f /work/keys/$NODE_NAME.cert
+
+          ndnsec export -o /work/keys/$NODE_NAME.p12 -i $ROUTER_PREFIX -P password
+
+          SECRET_NAME="sec-$NODE_NAME"
+          kubectl delete secret $SECRET_NAME --ignore-not-found
+          kubectl create secret generic $SECRET_NAME \
+            --from-file=identity.p12=/work/keys/$NODE_NAME.p12
+
+          
+          NODE_NAME="node-c"
+          ROUTER_PREFIX="/ndn/jp/waseda/sim-site/%C1.Router/$NODE_NAME"
+
+          echo "Processing $NODE_NAME ..."
+          ndnsec key-gen $ROUTER_PREFIX > $NODE_NAME.key
+          ndnsec cert-gen -s $OP_PREFIX $NODE_NAME.key > /work/keys/$NODE_NAME.cert
+          ndnsec cert-install -f /work/keys/$NODE_NAME.cert
+
+          ndnsec export -o /work/keys/$NODE_NAME.p12 -i $ROUTER_PREFIX -P password
+
+          SECRET_NAME="sec-$NODE_NAME"
+          kubectl delete secret $SECRET_NAME --ignore-not-found
+          kubectl create secret generic $SECRET_NAME \
+            --from-file=identity.p12=/work/keys/$NODE_NAME.p12
+
+          
+
+          echo "=== All Done. Secrets created. ==="
+      restartPolicy: Never
 
 ---
 apiVersion: v1
@@ -506,6 +638,7 @@ data:
         NETWORK_PREFIX="/ndn/jp/waseda"
         SITE_NAME="sim-site"
         ROUTER_PREFIX="${NETWORK_PREFIX}/${SITE_NAME}/%C1.Router/${NODE_NAME}"
+
         ndnsec set-default "$ROUTER_PREFIX"
         ndnsec cert-dump -i "$ROUTER_PREFIX" > /etc/nlsr/router.cert
 
@@ -525,6 +658,15 @@ data:
     NFD_PID=$!
     sleep 5
 
+    echo "Waiting for NFD socket..."
+    for i in {1..30}; do
+        if [ -S /run/nfd/nfd.sock ]; then
+            echo "NFD is ready."
+            break
+        fi
+        sleep 2
+    done
+
     echo "--- Creating Faces ---"
     IFS=',' read -ra ADDR <<< "$NEIGHBORS"
     for neighbor_pair in "${ADDR[@]}"; do
@@ -541,6 +683,8 @@ data:
             done
         fi
     done
+
+    sleep 2
 
     echo "--- Starting NLSR ---"
     nlsr -f /etc/nlsr/nlsr.conf &
@@ -748,7 +892,8 @@ data:
         trust-anchor
         {
           
-          type any
+          type file
+          file-name /etc/trust-anchor/root.cert
           
         }
       }
@@ -771,7 +916,7 @@ data:
             key-locator
             {
               type name
-              regex ^([^<KEY><%C1.Operator>]*)<%C1.Operator>[^<KEY>]*<KEY><>{1,3}$
+              regex ^([^<KEY><%C1.Router>]*)<%C1.Router>[^<KEY>]*<KEY><>{1,3}$
             }
           }
         }
@@ -795,11 +940,19 @@ data:
         trust-anchor
         {
           
-          type any
+          type file
+          file-name /etc/trust-anchor/site.cert
           
         }
       }
 
+      
+      cert-to-publish "router.cert"
+      
+      cert-to-publish "/etc/trust-anchor/root.cert"
+      cert-to-publish "/etc/trust-anchor/site.cert"
+      cert-to-publish "/etc/trust-anchor/op.cert"
+      
       
     }
 ---
@@ -841,7 +994,7 @@ spec:
             - name: NEIGHBORS
               value: "node-b:10,node-c:25"
             - name: SECURITY_MODE
-              value: "lax"
+              value: "strict"
           securityContext:
             capabilities:
               add: ["NET_ADMIN"]
@@ -851,6 +1004,13 @@ spec:
             - name: nlsr-config-vol
               mountPath: /bootstrap/nlsr
             
+            - name: secret-vol
+              mountPath: /etc/secret
+              readOnly: true
+            - name: trust-anchor-vol
+              mountPath: /etc/trust-anchor
+              readOnly: true
+            
       volumes:
         - name: scripts-vol
           configMap:
@@ -859,6 +1019,13 @@ spec:
         - name: nlsr-config-vol
           configMap:
             name: config-node-a
+        
+        - name: secret-vol
+          secret:
+            secretName: sec-node-a
+        - name: trust-anchor-vol
+          secret:
+            secretName: ndn-trust-anchor
         
 ---
 apiVersion: v1
@@ -1060,7 +1227,8 @@ data:
         trust-anchor
         {
           
-          type any
+          type file
+          file-name /etc/trust-anchor/root.cert
           
         }
       }
@@ -1083,7 +1251,7 @@ data:
             key-locator
             {
               type name
-              regex ^([^<KEY><%C1.Operator>]*)<%C1.Operator>[^<KEY>]*<KEY><>{1,3}$
+              regex ^([^<KEY><%C1.Router>]*)<%C1.Router>[^<KEY>]*<KEY><>{1,3}$
             }
           }
         }
@@ -1107,11 +1275,15 @@ data:
         trust-anchor
         {
           
-          type any
+          type file
+          file-name /etc/trust-anchor/site.cert
           
         }
       }
 
+      
+      cert-to-publish "router.cert"
+      
       
     }
 ---
@@ -1153,7 +1325,7 @@ spec:
             - name: NEIGHBORS
               value: "node-a:10,node-c:15"
             - name: SECURITY_MODE
-              value: "lax"
+              value: "strict"
           securityContext:
             capabilities:
               add: ["NET_ADMIN"]
@@ -1163,6 +1335,13 @@ spec:
             - name: nlsr-config-vol
               mountPath: /bootstrap/nlsr
             
+            - name: secret-vol
+              mountPath: /etc/secret
+              readOnly: true
+            - name: trust-anchor-vol
+              mountPath: /etc/trust-anchor
+              readOnly: true
+            
       volumes:
         - name: scripts-vol
           configMap:
@@ -1171,6 +1350,13 @@ spec:
         - name: nlsr-config-vol
           configMap:
             name: config-node-b
+        
+        - name: secret-vol
+          secret:
+            secretName: sec-node-b
+        - name: trust-anchor-vol
+          secret:
+            secretName: ndn-trust-anchor
         
 ---
 apiVersion: v1
@@ -1372,7 +1558,8 @@ data:
         trust-anchor
         {
           
-          type any
+          type file
+          file-name /etc/trust-anchor/root.cert
           
         }
       }
@@ -1395,7 +1582,7 @@ data:
             key-locator
             {
               type name
-              regex ^([^<KEY><%C1.Operator>]*)<%C1.Operator>[^<KEY>]*<KEY><>{1,3}$
+              regex ^([^<KEY><%C1.Router>]*)<%C1.Router>[^<KEY>]*<KEY><>{1,3}$
             }
           }
         }
@@ -1419,11 +1606,15 @@ data:
         trust-anchor
         {
           
-          type any
+          type file
+          file-name /etc/trust-anchor/site.cert
           
         }
       }
 
+      
+      cert-to-publish "router.cert"
+      
       
     }
 ---
@@ -1465,7 +1656,7 @@ spec:
             - name: NEIGHBORS
               value: "node-a:25,node-b:15"
             - name: SECURITY_MODE
-              value: "lax"
+              value: "strict"
           securityContext:
             capabilities:
               add: ["NET_ADMIN"]
@@ -1475,6 +1666,13 @@ spec:
             - name: nlsr-config-vol
               mountPath: /bootstrap/nlsr
             
+            - name: secret-vol
+              mountPath: /etc/secret
+              readOnly: true
+            - name: trust-anchor-vol
+              mountPath: /etc/trust-anchor
+              readOnly: true
+            
       volumes:
         - name: scripts-vol
           configMap:
@@ -1483,4 +1681,11 @@ spec:
         - name: nlsr-config-vol
           configMap:
             name: config-node-c
+        
+        - name: secret-vol
+          secret:
+            secretName: sec-node-c
+        - name: trust-anchor-vol
+          secret:
+            secretName: ndn-trust-anchor
         
