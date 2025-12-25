@@ -5,6 +5,6 @@ policies:
         allowed_consumers:
           - "node-c"
 
-      # 例: 別のデータがあればここに追加
+      # 別のデータがあればここに追加
       # - prefix: "/ndn/jp/waseda/sim-site/node-b/..."
       #   allowed_consumers: ["node-a", "node-c"]
