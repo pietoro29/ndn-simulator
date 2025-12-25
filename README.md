@@ -52,7 +52,7 @@ PythonとJinja2テンプレートを使用してKubernetesマニフェストを�
 
 ## 使い方 (Usage)
 
-### Phase1: メッシュネットワークの構築
+### Phase 1: メッシュネットワークの構築
 
 NDNノードのデプロイとNLSRによるルーティング設定を行います
 
@@ -80,7 +80,7 @@ NDNノードのデプロイとNLSRによるルーティング設定を行いま�
    kubectl logs <node-pod-name>
    ```
 
-### Phase2: NAC(Named-based Access Control)の適用
+### Phase 2: NAC(Named-based Access Control)の適用
 
 Phase1で構築したネットワーク上にNACコンポーネントをデプロイします
 
@@ -116,5 +116,6 @@ Phase1で構築したネットワーク上にNACコンポーネントをデプ�
 kubectl delete -f output/ndn-nac.yaml
 kubectl delete -f output/ndn-mesh.yaml
 ```
+
 
 
