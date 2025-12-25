@@ -105,9 +105,9 @@ Phase1で構築したネットワーク上にNACコンポーネントをデプ�
 
 | 条件         | スクリプト              | 説明 |
 |--------------|-------------------------|------|
-| Laxモード    | `./test/test1_lax.sh`   | 証明書検証なし。正規でない鍵でもAdvertiseが可能であることを確認します。 |
+| Laxモード    | `./test/test1_lax.sh`   | 証明書検証なし。データ通信の確認と正規でない鍵でもAdvertiseが可能であることを確認します。 |
 | Strictモード | `./test/test2_strict.sh`| 証明書検証あり。正規証明書で通信成功し、不正証明書では拒否されることを確認します。 |
-| NAC適用時    | `./test/test3_nac.sh`   | NACポリシー検証。許可されたConsumerのみがコンテンツを復号できることを確認します。 |
+| NAC適用時    | `./test/test3_nac.sh`   | NACポリシー検証。許可されたConsumerのみが受信したコンテンツを復号できることを確認します。 |
 
 ## Undeploy
 
@@ -116,6 +116,7 @@ Phase1で構築したネットワーク上にNACコンポーネントをデプ�
 kubectl delete -f output/ndn-nac.yaml
 kubectl delete -f output/ndn-mesh.yaml
 ```
+
 
 
 
